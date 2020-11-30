@@ -1,0 +1,248 @@
+---
+title: "Untitled_1"
+author: "ZEYU DING"
+date: "11/28/2020"
+output: html_document
+---
+
+```{r}
+require(lubridate)
+require(ggplot2)
+require(timeSeries)
+require(tseries)
+require(reshape2)
+require(scales)
+require(vars)
+require(car)
+require(dynlm)
+require(stargazer)
+require(sandwich)
+require(forecast)
+require(zoo)
+require(xts)
+require(lubridate)
+require(plyr)
+require(grid)
+
+options(scipen=999)
+options(digits=2)
+set.seed(345)
+options(xtable.comment = FALSE)
+
+df<-read.csv("~/Desktop/NYU/Fall 2020/Data science for social impact 周四凌晨/final/ukip_media.tab.csv", fileEncoding="latin1", encoding="UTF-8")
+
+
+df$UKIP.Vote<-interpNA(df$UKIP.Vote, method = "linear")
+df$Salience.Imm<-interpNA(df$Salience.Imm, method = "linear")
+
+df$General.Elections<-ifelse(df$General.Election2005==1 | df$General.Election2010==1 |
+                        df$General.Election2015==1, 1, 0)
+
+df$EU.Elections<-ifelse(df$Euro.Election2004==1 | 
+                  df$Euro.Election2009==1 |
+                  df$Euro.Election2014==1,
+                  1, 0)
+
+
+unscaled<-df[c("Date", "UKIP.Vote", "UKIP.Articles", "Unemployment", "Salience.Imm", "General.Elections", "EU.Elections", "EU.Ref",
+               "Worker.Rights", "Cameron.Fruitcakes", 
+               "Leader.Articles", "Farage.Articles",  "European.Share.Step",
+               "European.Share.Pulse", "National.Share.Step", "National.Share.Pulse")]
+```
+
+
+```{r, analysis one}
+# we take the evidence from the VAR to be our warrant for exploring the qualitative data in search of examples
+# whereby the substantive significance of the statistical evidence may either be better illustrated or
+# possibly discounted due to untheorized contingencies. Based on Figure 4, we focus on two key
+# periods: from July to September 2012, and the second half of 2013.
+# Following this, there are at least two sets of months in which increased media coverage was
+# not caused by changes in UKIP’s public support but was followed by some of the party’s most
+# historically crucial increases in public support. Using Figure 4 as a guide, we consider in greater
+# detail the two months of ‘uncaused’ increases in coverage near the middle of 2012 (July and
+# September) and the second half of 2014 (August and November).
+modelvars1<-unscaled[-c(103:107,128:132),]
+
+modelvars1$UKIP.Articles.d<-diff(zoo(scale(modelvars1$UKIP.Articles)), na.pad=T)
+modelvars1$UKIP.Articles.d.l<-lag(modelvars1$UKIP.Articles.d, k=-1, na.pad=T)
+modelvars1$UKIP.Articles.d<-as.numeric(modelvars1$UKIP.Articles.d)
+modelvars1$UKIP.Articles.d.l<-as.numeric(modelvars1$UKIP.Articles.d.l)
+modelvars1$UKIP.Vote.d<-diff(zoo(scale(modelvars1$UKIP.Vote)), na.pad=T)
+modelvars1$UKIP.Vote.d.l<-lag(modelvars1$UKIP.Vote.d,k=-1, na.pad=T)
+modelvars1$UKIP.Vote.d<-as.numeric(modelvars1$UKIP.Vote.d)
+modelvars1$UKIP.Vote.d.l<-as.numeric(modelvars1$UKIP.Vote.d.l)
+
+modelvars1$UKIP.Articles.notlog<-modelvars1$UKIP.Articles
+modelvars1$UKIP.Vote.notlog<-modelvars1$UKIP.Vote
+
+modelvars1$UKIP.Articles<-log(modelvars1$UKIP.Articles)
+modelvars1$Leader.Articles<-log(modelvars1$Leader.Articles+1)
+modelvars1$Farage.Articles<-log(modelvars1$Farage.Articles+1)
+modelvars1$UKIP.Vote<-log(modelvars1$UKIP.Vote)
+
+diffvars<-data.frame()  # difference variables and lag dates/elections to match
+diffvars<-as.data.frame(cbind(modelvars1$Date[2:length(modelvars1$Date)],
+                              diff(modelvars1$UKIP.Vote),
+                              diff(modelvars1$UKIP.Articles),
+                              diff(modelvars1$Unemployment),
+                              diff(modelvars1$Salience.Imm),
+                              modelvars1[2:length(modelvars1$Date), 6:16]))
+names(diffvars)<-c("Date", "UKIP.Vote", "UKIP.Articles","Unemployment",
+                   "Immigration", "General.Elections", "EU.Elections",
+                   "EU.Ref", "Worker.Rights", "Cameron", "Leader.Articles",
+                   "Farage.Articles", "European.Share.Step", "European.Share.Pulse",
+                   "National.Share.Step", "National.Share.Pulse")
+row.names(diffvars)<-NULL
+```
+
+```{r analysis one}
+diffvars.unemp <-diffvars[complete.cases(diffvars),]
+varmodel1<-VAR(diffvars.unemp[c(3,2)],
+              lag.max=10,
+              ic="AIC",
+              type="both",
+              exogen=diffvars.unemp[c(6:7,4:5)])
+
+gc.articles<-causality(varmodel1,
+                       cause="UKIP.Vote",
+                       vcov.=vcovHC(varmodel1, type="HC"))
+
+gc.vote<-causality(varmodel1,
+                   cause="UKIP.Articles",
+                   vcov.=vcovHC(varmodel1, type="HC"))
+
+gc.articles.result<-as.data.frame(unlist(gc.articles$Granger))
+gc.vote.result<-as.data.frame(unlist(gc.vote$Granger))
+
+results1<-merge(gc.vote.result,
+                gc.articles.result,
+                by="row.names")
+results1
+
+#0.0389869862339822 compare to 	0.0557604875584676
+#very significant
+```
+```{r analysis two}
+# The party reached its greatest level of success in the mid-2010s, when it gained two members of Parliament and was the one of the largest UK party in the European Parliament
+
+modelvars2<-unscaled[(79:160),]
+
+modelvars2$UKIP.Articles.d<-diff(zoo(scale(modelvars2$UKIP.Articles)), na.pad=T)
+modelvars2$UKIP.Articles.d.l<-lag(modelvars2$UKIP.Articles.d, k=-1, na.pad=T)
+modelvars2$UKIP.Articles.d<-as.numeric(modelvars2$UKIP.Articles.d)
+modelvars2$UKIP.Articles.d.l<-as.numeric(modelvars2$UKIP.Articles.d.l)
+modelvars2$UKIP.Vote.d<-diff(zoo(scale(modelvars2$UKIP.Vote)), na.pad=T)
+modelvars2$UKIP.Vote.d.l<-lag(modelvars2$UKIP.Vote.d,k=-1, na.pad=T)
+modelvars2$UKIP.Vote.d<-as.numeric(modelvars2$UKIP.Vote.d)
+modelvars2$UKIP.Vote.d.l<-as.numeric(modelvars2$UKIP.Vote.d.l)
+
+modelvars2$UKIP.Articles.notlog<-modelvars2$UKIP.Articles
+modelvars2$UKIP.Vote.notlog<-modelvars2$UKIP.Vote
+
+modelvars2$UKIP.Articles<-log(modelvars2$UKIP.Articles)
+modelvars2$Leader.Articles<-log(modelvars2$Leader.Articles+1)
+modelvars2$Farage.Articles<-log(modelvars2$Farage.Articles+1)
+modelvars2$UKIP.Vote<-log(modelvars2$UKIP.Vote)
+
+diffvars<-data.frame()  # difference variables and lag dates/elections to match
+diffvars<-as.data.frame(cbind(modelvars2$Date[2:length(modelvars2$Date)],
+                              diff(modelvars2$UKIP.Vote),
+                              diff(modelvars2$UKIP.Articles),
+                              diff(modelvars2$Unemployment),
+                              diff(modelvars2$Salience.Imm),
+                              modelvars2[2:length(modelvars2$Date), 6:16]))
+names(diffvars)<-c("Date", "UKIP.Vote", "UKIP.Articles","Unemployment",
+                   "Immigration", "General.Elections", "EU.Elections",
+                   "EU.Ref", "Worker.Rights", "Cameron", "Leader.Articles",
+                   "Farage.Articles", "European.Share.Step", "European.Share.Pulse",
+                   "National.Share.Step", "National.Share.Pulse")
+row.names(diffvars)<-NULL
+
+diffvars.unemp <-diffvars[complete.cases(diffvars),]
+varmodel2<-VAR(diffvars.unemp[c(3,2)],
+              lag.max=10,
+              ic="AIC",
+              type="both",
+              exogen=diffvars.unemp[c(6:7,4:5)])
+
+gc.articles2<-causality(varmodel2,
+                        cause="UKIP.Vote",
+                        vcov.=vcovHC(varmodel2, type="HC"))
+
+gc.vote2<-causality(varmodel2,
+                    cause="UKIP.Articles",
+                    vcov.=vcovHC(varmodel2, type="HC"))
+
+gc.articles.result2<-as.data.frame(unlist(gc.articles2$Granger))
+gc.vote.result2<-as.data.frame(unlist(gc.vote2$Granger))
+
+results2<-merge(gc.vote.result2,
+                gc.articles.result2,
+                by="row.names")
+results2
+# before 2010
+sum(unscaled$UKIP.Vote[1:78])/sum(unscaled$UKIP.Articles[1:78])
+# after 2010
+sum(unscaled$UKIP.Vote[79:160])/sum(unscaled$UKIP.Articles[79:160])
+#The result still proves that media converage drive support. As more articles published, the lower the support. There might need more analysis to answer why. 
+```
+```{r analysis three}
+# add on to the analysis two, leader's artciles drive support
+modelvars3<-unscaled[c(1:78),]
+
+modelvars3$UKIP.Articles.d<-diff(zoo(scale(modelvars3$UKIP.Articles)), na.pad=T)
+modelvars3$UKIP.Articles.d.l<-lag(modelvars3$UKIP.Articles.d, k=-1, na.pad=T)
+modelvars3$UKIP.Articles.d<-as.numeric(modelvars3$UKIP.Articles.d)
+modelvars3$UKIP.Articles.d.l<-as.numeric(modelvars3$UKIP.Articles.d.l)
+modelvars3$UKIP.Vote.d<-diff(zoo(scale(modelvars3$UKIP.Vote)), na.pad=T)
+modelvars3$UKIP.Vote.d.l<-lag(modelvars3$UKIP.Vote.d,k=-1, na.pad=T)
+modelvars3$UKIP.Vote.d<-as.numeric(modelvars3$UKIP.Vote.d)
+modelvars3$UKIP.Vote.d.l<-as.numeric(modelvars3$UKIP.Vote.d.l)
+
+modelvars3$UKIP.Articles.notlog<-modelvars3$UKIP.Articles
+modelvars3$UKIP.Vote.notlog<-modelvars3$UKIP.Vote
+
+modelvars3$UKIP.Articles<-log(modelvars3$UKIP.Articles)
+modelvars3$Leader.Articles<-log(modelvars3$Leader.Articles+1)
+modelvars3$Farage.Articles<-log(modelvars3$Farage.Articles+1)
+modelvars3$UKIP.Vote<-log(modelvars3$UKIP.Vote)
+
+diffvars_3<-data.frame()  # difference variables and lag dates/elections to match
+diffvars_3<-as.data.frame(cbind(modelvars3$Date[2:length(modelvars3$Date)],
+                              diff(modelvars3$UKIP.Vote),
+                              diff(modelvars3$Leader.Articles),
+                              diff(modelvars3$Farage.Articles),
+                              diff(modelvars3$Unemployment),
+                              diff(modelvars3$Salience.Imm),
+                              modelvars3[2:length(modelvars3$Date), 6:16]))
+names(diffvars_3)<-c("Date", "UKIP.Vote", "Leader.Articles", "Farage.Articles","Unemployment",
+                   "Immigration", "General.Elections", "EU.Elections", "EU.Ref",
+                   "Worker.Rights", "Cameron", "Leader", "Farage", "European.Share.Step",
+                   "European.Share.Pulse", "National.Share.Step", "National.Share.Pulse")
+row.names(diffvars_3)<-NULL
+
+
+diffvars.unemp2 <- diffvars_3[complete.cases(diffvars_3),]
+
+varmodel3<-VAR(diffvars.unemp2[c(3,2)],
+                     lag.max=10,
+                     ic="AIC",
+                     type="both",
+                     exogen=diffvars.unemp2[c(14,16, 5:6, 4)])
+
+gc.articles3<-causality(varmodel3,
+                        cause="UKIP.Vote",
+                        vcov.=vcovHC(varmodel3, type="HC"))
+
+gc.vote3<-causality(varmodel3,
+                    cause="Leader.Articles",
+                    vcov.=vcovHC(varmodel3, type="HC"))
+
+gc.articles.result3<-as.data.frame(unlist(gc.articles3$Granger))
+gc.vote.result3<-as.data.frame(unlist(gc.vote3$Granger))
+
+results3<-merge(gc.vote.result3,
+                gc.articles.result3,
+                by="row.names")
+results3
+```
